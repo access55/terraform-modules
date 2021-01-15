@@ -1,228 +1,253 @@
-resource "aws_s3_bucket" "default" {
-  count         = module.this.enabled ? 1 : 0
-  bucket        = module.this.id
-  acl           = try(length(var.grants), 0) == 0 ? var.acl : null
-  force_destroy = var.force_destroy
-  policy        = var.policy
-  tags          = module.this.tags
+locals {
+  prevent_unencrypted_uploads = var.prevent_unencrypted_uploads && var.enable_server_side_encryption ? true : false
 
-  versioning {
-    enabled = var.versioning_enabled
-  }
+  policy = local.prevent_unencrypted_uploads ? join(
+    "",
+    data.aws_iam_policy_document.prevent_unencrypted_uploads.*.json
+  ) : ""
 
-  lifecycle_rule {
-    id                                     = module.this.id
-    enabled                                = var.lifecycle_rule_enabled
-    prefix                                 = var.prefix
-    tags                                   = var.lifecycle_tags
-    abort_incomplete_multipart_upload_days = var.abort_incomplete_multipart_upload_days
+  terraform_backend_config_file = format(
+    "%s/%s",
+    var.terraform_backend_config_file_path,
+    var.terraform_backend_config_file_name
+  )
 
-    noncurrent_version_expiration {
-      days = var.noncurrent_version_expiration_days
-    }
+  terraform_backend_config_template_file = var.terraform_backend_config_template_file != "" ? var.terraform_backend_config_template_file : "${path.module}/templates/terraform.tf.tpl"
 
-    dynamic "noncurrent_version_transition" {
-      for_each = var.enable_glacier_transition ? [1] : []
-
-      content {
-        days          = var.noncurrent_version_transition_days
-        storage_class = "GLACIER"
-      }
-    }
-
-    dynamic "transition" {
-      for_each = var.enable_glacier_transition ? [1] : []
-
-      content {
-        days          = var.glacier_transition_days
-        storage_class = "GLACIER"
-      }
-    }
-
-    dynamic "transition" {
-      for_each = var.enable_standard_ia_transition ? [1] : []
-
-      content {
-        days          = var.standard_transition_days
-        storage_class = "STANDARD_IA"
-      }
-    }
-
-    dynamic "expiration" {
-      for_each = var.enable_current_object_expiration ? [1] : []
-
-      content {
-        days = var.expiration_days
-      }
-    }
-  }
-
-  dynamic "logging" {
-    for_each = var.logging == null ? [] : [1]
-    content {
-      target_bucket = var.logging["bucket_name"]
-      target_prefix = var.logging["prefix"]
-    }
-  }
-
-  # https://docs.aws.amazon.com/AmazonS3/latest/dev/bucket-encryption.html
-  # https://www.terraform.io/docs/providers/aws/r/s3_bucket.html#enable-default-server-side-encryption
-  server_side_encryption_configuration {
-    rule {
-      apply_server_side_encryption_by_default {
-        sse_algorithm     = var.sse_algorithm
-        kms_master_key_id = var.kms_master_key_arn
-      }
-    }
-  }
-
-  dynamic "cors_rule" {
-    for_each = var.cors_rule_inputs == null ? [] : var.cors_rule_inputs
-
-    content {
-      allowed_headers = cors_rule.value.allowed_headers
-      allowed_methods = cors_rule.value.allowed_methods
-      allowed_origins = cors_rule.value.allowed_origins
-      expose_headers  = cors_rule.value.expose_headers
-      max_age_seconds = cors_rule.value.max_age_seconds
-    }
-  }
-
-  dynamic "grant" {
-    for_each = try(length(var.grants), 0) == 0 || try(length(var.acl), 0) > 0 ? [] : var.grants
-
-    content {
-      id          = grant.value.id
-      type        = grant.value.type
-      permissions = grant.value.permissions
-      uri         = grant.value.uri
-    }
-  }
-
-  dynamic "replication_configuration" {
-    for_each = var.s3_replication_enabled ? [1] : []
-
-    content {
-      role = aws_iam_role.replication[0].arn
-
-      dynamic "rules" {
-        for_each = var.replication_rules == null ? [] : var.replication_rules
-
-        content {
-          id       = rules.value.id
-          priority = try(rules.value.priority, 0)
-          prefix   = try(rules.value.prefix, null)
-          status   = try(rules.value.status, null)
-
-          destination {
-            bucket             = var.s3_replica_bucket_arn
-            storage_class      = try(rules.value.destination.storage_class, "STANDARD")
-            replica_kms_key_id = try(rules.value.destination.replica_kms_key_id, null)
-            account_id         = try(rules.value.destination.account_id, null)
-
-            dynamic "access_control_translation" {
-              for_each = try(rules.value.destination.access_control_translation.owner, null) == null ? [] : [rules.value.destination.access_control_translation.owner]
-
-              content {
-                owner = access_control_translation.value
-              }
-            }
-          }
-
-          dynamic "source_selection_criteria" {
-            for_each = try(rules.value.source_selection_criteria.sse_kms_encrypted_objects.enabled, null) == null ? [] : [rules.value.source_selection_criteria.sse_kms_encrypted_objects.enabled]
-
-            content {
-              sse_kms_encrypted_objects {
-                enabled = source_selection_criteria.value
-              }
-            }
-          }
-
-          dynamic "filter" {
-            for_each = try(rules.value.filter, null) == null ? [] : [rules.value.filter]
-
-            content {
-              prefix = try(filter.value.prefix, null)
-              tags   = try(filter.value.tags, {})
-            }
-          }
-        }
-      }
-    }
-  }
+  bucket_name = var.s3_bucket_name != "" ? var.s3_bucket_name : module.s3_bucket_label.id
 }
 
-module "s3_user" {
-  source  = "cloudposse/iam-s3-user/aws"
-  version = "0.12.0"
-
-  enabled      = module.this.enabled && var.user_enabled ? true : false
-  s3_actions   = var.allowed_bucket_actions
-  s3_resources = ["${join("", aws_s3_bucket.default.*.arn)}/*", join("", aws_s3_bucket.default.*.arn)]
-
-  context = module.this.context
+module "base_label" {
+  source              = "git::https://github.com/cloudposse/terraform-null-label.git?ref=tags/0.16.0"
+  namespace           = var.namespace
+  environment         = var.environment
+  stage               = var.stage
+  name                = var.name
+  delimiter           = var.delimiter
+  attributes          = var.attributes
+  tags                = var.tags
+  additional_tag_map  = var.additional_tag_map
+  context             = var.context
+  label_order         = var.label_order
+  regex_replace_chars = var.regex_replace_chars
 }
 
-data "aws_partition" "current" {}
+module "s3_bucket_label" {
+  source  = "git::https://github.com/cloudposse/terraform-null-label.git?ref=tags/0.16.0"
+  context = module.base_label.context
+}
 
-data "aws_iam_policy_document" "bucket_policy" {
-  count = module.this.enabled && var.allow_encrypted_uploads_only ? 1 : 0
+data "aws_iam_policy_document" "prevent_unencrypted_uploads" {
+  count = local.prevent_unencrypted_uploads ? 1 : 0
 
   statement {
-    sid       = "DenyIncorrectEncryptionHeader"
-    effect    = "Deny"
-    actions   = ["s3:PutObject"]
-    resources = ["arn:${data.aws_partition.current.partition}:s3:::${join("", aws_s3_bucket.default.*.id)}/*"]
+    sid = "DenyIncorrectEncryptionHeader"
+
+    effect = "Deny"
 
     principals {
       identifiers = ["*"]
-      type        = "*"
+      type        = "AWS"
     }
+
+    actions = [
+      "s3:PutObject",
+    ]
+
+    resources = [
+      "${var.arn_format}:s3:::${local.bucket_name}/*",
+    ]
 
     condition {
       test     = "StringNotEquals"
-      values   = [var.sse_algorithm]
       variable = "s3:x-amz-server-side-encryption"
+
+      values = [
+        "AES256",
+      ]
     }
   }
 
   statement {
-    sid       = "DenyUnEncryptedObjectUploads"
-    effect    = "Deny"
-    actions   = ["s3:PutObject"]
-    resources = ["arn:${data.aws_partition.current.partition}:s3:::${join("", aws_s3_bucket.default.*.id)}/*"]
+    sid = "DenyUnEncryptedObjectUploads"
+
+    effect = "Deny"
 
     principals {
       identifiers = ["*"]
-      type        = "*"
+      type        = "AWS"
     }
+
+    actions = [
+      "s3:PutObject",
+    ]
+
+    resources = [
+      "${var.arn_format}:s3:::${local.bucket_name}/*",
+    ]
 
     condition {
       test     = "Null"
-      values   = ["true"]
       variable = "s3:x-amz-server-side-encryption"
+
+      values = [
+        "true",
+      ]
+    }
+  }
+
+  statement {
+    sid = "EnforceTlsRequestsOnly"
+
+    effect = "Deny"
+
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+
+    actions = ["s3:*"]
+
+    resources = [
+      "${var.arn_format}:s3:::${local.bucket_name}",
+      "${var.arn_format}:s3:::${local.bucket_name}/*",
+    ]
+
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
     }
   }
 }
 
-resource "aws_s3_bucket_policy" "default" {
-  count      = module.this.enabled && var.allow_encrypted_uploads_only ? 1 : 0
-  bucket     = join("", aws_s3_bucket.default.*.id)
-  policy     = join("", data.aws_iam_policy_document.bucket_policy.*.json)
-  depends_on = [aws_s3_bucket_public_access_block.default]
+resource "aws_s3_bucket" "default" {
+  bucket        = substr(local.bucket_name, 0, 63)
+  acl           = var.acl
+  region        = var.region
+  force_destroy = var.force_destroy
+  policy        = local.policy
+
+  versioning {
+    enabled    = true
+    mfa_delete = var.mfa_delete
+  }
+
+  server_side_encryption_configuration {
+    rule {
+      apply_server_side_encryption_by_default {
+        sse_algorithm = "AES256"
+      }
+    }
+  }
+
+  tags = module.s3_bucket_label.tags
 }
 
-# Refer to the terraform documentation on s3_bucket_public_access_block at
-# https://www.terraform.io/docs/providers/aws/r/s3_bucket_public_access_block.html
-# for the nuances of the blocking options
 resource "aws_s3_bucket_public_access_block" "default" {
-  count  = module.this.enabled ? 1 : 0
-  bucket = join("", aws_s3_bucket.default.*.id)
-
+  count                   = var.enable_public_access_block ? 1 : 0
+  bucket                  = aws_s3_bucket.default.id
   block_public_acls       = var.block_public_acls
-  block_public_policy     = var.block_public_policy
   ignore_public_acls      = var.ignore_public_acls
+  block_public_policy     = var.block_public_policy
   restrict_public_buckets = var.restrict_public_buckets
 }
 
+module "dynamodb_table_label" {
+  source     = "git::https://github.com/cloudposse/terraform-null-label.git?ref=tags/0.16.0"
+  context    = module.base_label.context
+  attributes = compact(concat(var.attributes, ["lock"]))
+}
+
+resource "aws_dynamodb_table" "with_server_side_encryption" {
+  count          = var.enable_server_side_encryption ? 1 : 0
+  name           = module.dynamodb_table_label.id
+  billing_mode   = var.billing_mode
+  read_capacity  = var.billing_mode == "PROVISIONED" ? var.read_capacity : null
+  write_capacity = var.billing_mode == "PROVISIONED" ? var.write_capacity : null
+
+  # https://www.terraform.io/docs/backends/types/s3.html#dynamodb_table
+  hash_key = "LockID"
+
+  server_side_encryption {
+    enabled = true
+  }
+
+  point_in_time_recovery {
+    enabled = var.enable_point_in_time_recovery
+  }
+
+  lifecycle {
+    ignore_changes = [
+      billing_mode,
+      read_capacity,
+      write_capacity,
+    ]
+  }
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+
+  tags = module.dynamodb_table_label.tags
+}
+
+resource "aws_dynamodb_table" "without_server_side_encryption" {
+  count          = var.enable_server_side_encryption ? 0 : 1
+  name           = module.dynamodb_table_label.id
+  billing_mode   = var.billing_mode
+  read_capacity  = var.billing_mode == "PROVISIONED" ? var.read_capacity : null
+  write_capacity = var.billing_mode == "PROVISIONED" ? var.write_capacity : null
+
+  # https://www.terraform.io/docs/backends/types/s3.html#dynamodb_table
+  hash_key = "LockID"
+
+  point_in_time_recovery {
+    enabled = var.enable_point_in_time_recovery
+  }
+
+  lifecycle {
+    ignore_changes = [
+      billing_mode,
+      read_capacity,
+      write_capacity,
+    ]
+  }
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+
+  tags = module.dynamodb_table_label.tags
+}
+
+data "template_file" "terraform_backend_config" {
+  template = file(local.terraform_backend_config_template_file)
+
+  vars = {
+    region = var.region
+    bucket = aws_s3_bucket.default.id
+
+    dynamodb_table = element(
+      coalescelist(
+        aws_dynamodb_table.with_server_side_encryption.*.name,
+        aws_dynamodb_table.without_server_side_encryption.*.name
+      ),
+      0
+    )
+
+    encrypt              = var.enable_server_side_encryption ? "true" : "false"
+    role_arn             = var.role_arn
+    profile              = var.profile
+    terraform_version    = var.terraform_version
+    terraform_state_file = var.terraform_state_file
+  }
+}
+
+resource "local_file" "terraform_backend_config" {
+  count    = var.terraform_backend_config_file_path != "" ? 1 : 0
+  content  = data.template_file.terraform_backend_config.rendered
+  filename = local.terraform_backend_config_file
+}

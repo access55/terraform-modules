@@ -1,61 +1,55 @@
-output "bucket_domain_name" {
-  value       = module.this.enabled ? join("", aws_s3_bucket.default.*.bucket_domain_name) : ""
-  description = "FQDN of bucket"
+output "s3_bucket_domain_name" {
+  value       = aws_s3_bucket.default.bucket_domain_name
+  description = "S3 bucket domain name"
 }
 
-output "bucket_regional_domain_name" {
-  value       = module.this.enabled ? join("", aws_s3_bucket.default.*.bucket_regional_domain_name) : ""
-  description = "The bucket region-specific domain name"
+output "s3_bucket_id" {
+  value       = aws_s3_bucket.default.id
+  description = "S3 bucket ID"
 }
 
-output "bucket_id" {
-  value       = module.this.enabled ? join("", aws_s3_bucket.default.*.id) : ""
-  description = "Bucket Name (aka ID)"
+output "s3_bucket_arn" {
+  value       = aws_s3_bucket.default.arn
+  description = "S3 bucket ARN"
 }
 
-output "bucket_arn" {
-  value       = module.this.enabled ? join("", aws_s3_bucket.default.*.arn) : ""
-  description = "Bucket ARN"
+output "dynamodb_table_name" {
+  value = element(
+    coalescelist(
+      aws_dynamodb_table.with_server_side_encryption.*.name,
+      aws_dynamodb_table.without_server_side_encryption.*.name,
+      [""]
+    ),
+    0
+  )
+  description = "DynamoDB table name"
 }
 
-output "bucket_region" {
-  value       = module.this.enabled ? join("", aws_s3_bucket.default.*.region) : ""
-  description = "Bucket region"
+output "dynamodb_table_id" {
+  value = element(
+    coalescelist(
+      aws_dynamodb_table.with_server_side_encryption.*.id,
+      aws_dynamodb_table.without_server_side_encryption.*.id,
+      [""]
+    ),
+    0
+  )
+  description = "DynamoDB table ID"
 }
 
-output "enabled" {
-  value       = module.this.enabled
-  description = "Is module enabled"
+output "dynamodb_table_arn" {
+  value = element(
+    coalescelist(
+      aws_dynamodb_table.with_server_side_encryption.*.arn,
+      aws_dynamodb_table.without_server_side_encryption.*.arn,
+      [""]
+    ),
+    0
+  )
+  description = "DynamoDB table ARN"
 }
 
-output "user_enabled" {
-  value       = var.user_enabled
-  description = "Is user creation enabled"
-}
-
-output "user_name" {
-  value       = module.s3_user.user_name
-  description = "Normalized IAM user name"
-}
-
-output "user_arn" {
-  value       = module.s3_user.user_arn
-  description = "The ARN assigned by AWS for the user"
-}
-
-output "user_unique_id" {
-  value       = module.s3_user.user_unique_id
-  description = "The user unique ID assigned by AWS"
-}
-
-output "access_key_id" {
-  sensitive   = true
-  value       = module.s3_user.access_key_id
-  description = "The access key ID"
-}
-
-output "secret_access_key" {
-  sensitive   = true
-  value       = module.s3_user.secret_access_key
-  description = "The secret access key. This will be written to the state file in plain-text"
+output "terraform_backend_config" {
+  value       = data.template_file.terraform_backend_config.rendered
+  description = "Rendered Terraform backend config file"
 }
