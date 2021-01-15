@@ -1,10 +1,17 @@
-locals {
-  elasticache_subnet_group_name = var.elasticache_subnet_group_name != "" ? var.elasticache_subnet_group_name : join("", aws_elasticache_subnet_group.default.*.name)
-  enabled                       = module.this.enabled
+module "label" {
+  source      = "git::https://github.com/cloudposse/terraform-null-label.git?ref=tags/0.16.0"
+  enabled     = var.enabled
+  namespace   = var.namespace
+  name        = var.name
+  stage       = var.stage
+  delimiter   = var.delimiter
+  attributes  = var.attributes
+  tags        = var.tags
+  label_order = var.label_order
 }
 
 resource "null_resource" "cluster_urls" {
-  count = local.enabled ? var.cluster_size : 0
+  count = var.enabled ? var.cluster_size : 0
 
   triggers = {
     name = "${replace(
@@ -24,14 +31,14 @@ resource "null_resource" "cluster_urls" {
 #
 
 resource "aws_security_group" "default" {
-  count  = local.enabled && var.use_existing_security_groups == false ? 1 : 0
+  count  = var.enabled && var.use_existing_security_groups == false ? 1 : 0
   vpc_id = var.vpc_id
-  name   = module.this.id
-  tags   = module.this.tags
+  name   = module.label.id
+  tags   = module.label.tags
 }
 
 resource "aws_security_group_rule" "egress" {
-  count             = local.enabled && var.use_existing_security_groups == false ? 1 : 0
+  count             = var.enabled && var.use_existing_security_groups == false ? 1 : 0
   description       = "Allow all egress traffic"
   from_port         = 0
   to_port           = 0
@@ -42,7 +49,7 @@ resource "aws_security_group_rule" "egress" {
 }
 
 resource "aws_security_group_rule" "ingress_security_groups" {
-  count                    = local.enabled && var.use_existing_security_groups == false ? length(var.allowed_security_groups) : 0
+  count                    = var.enabled && var.use_existing_security_groups == false ? length(var.allowed_security_groups) : 0
   description              = "Allow inbound traffic from existing Security Groups"
   from_port                = var.port
   to_port                  = var.port
@@ -53,7 +60,7 @@ resource "aws_security_group_rule" "ingress_security_groups" {
 }
 
 resource "aws_security_group_rule" "ingress_cidr_blocks" {
-  count             = local.enabled && var.use_existing_security_groups == false && length(var.allowed_cidr_blocks) > 0 ? 1 : 0
+  count             = var.enabled && var.use_existing_security_groups == false && length(var.allowed_cidr_blocks) > 0 ? 1 : 0
   description       = "Allow inbound traffic from CIDR blocks"
   from_port         = var.port
   to_port           = var.port
@@ -67,14 +74,14 @@ resource "aws_security_group_rule" "ingress_cidr_blocks" {
 # ElastiCache Resources
 #
 resource "aws_elasticache_subnet_group" "default" {
-  count      = local.enabled ? 1 : 0
-  name       = module.this.id
+  count      = var.enabled ? 1 : 0
+  name       = module.label.id
   subnet_ids = var.subnets
 }
 
 resource "aws_elasticache_parameter_group" "default" {
-  count  = local.enabled ? 1 : 0
-  name   = module.this.id
+  count  = var.enabled ? 1 : 0
+  name   = module.label.id
   family = var.elasticache_parameter_group_family
 
   parameter {
@@ -83,10 +90,13 @@ resource "aws_elasticache_parameter_group" "default" {
   }
 }
 
+locals {
+  elasticache_subnet_group_name = var.elasticache_subnet_group_name != "" ? var.elasticache_subnet_group_name : join("", aws_elasticache_subnet_group.default.*.name)
+}
+
 resource "aws_elasticache_cluster" "default" {
-  count                        = local.enabled ? 1 : 0
-  apply_immediately            = var.apply_immediately
-  cluster_id                   = module.this.id
+  count                        = var.enabled ? 1 : 0
+  cluster_id                   = module.label.id
   engine                       = "memcached"
   engine_version               = var.engine_version
   node_type                    = var.instance_type
@@ -99,15 +109,15 @@ resource "aws_elasticache_cluster" "default" {
   port                         = var.port
   az_mode                      = var.cluster_size == 1 ? "single-az" : "cross-az"
   preferred_availability_zones = slice(var.availability_zones, 0, var.cluster_size)
-  tags                         = module.this.tags
+  tags                         = module.label.tags
 }
 
 #
 # CloudWatch Resources
 #
 resource "aws_cloudwatch_metric_alarm" "cache_cpu" {
-  count               = local.enabled ? 1 : 0
-  alarm_name          = "${module.this.id}-cpu-utilization"
+  count               = var.enabled ? 1 : 0
+  alarm_name          = "${module.label.id}-cpu-utilization"
   alarm_description   = "Memcached cluster CPU utilization"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -119,7 +129,7 @@ resource "aws_cloudwatch_metric_alarm" "cache_cpu" {
   threshold = var.alarm_cpu_threshold_percent
 
   dimensions = {
-    CacheClusterId = module.this.id
+    CacheClusterId = module.label.id
   }
 
   alarm_actions = var.alarm_actions
@@ -127,8 +137,8 @@ resource "aws_cloudwatch_metric_alarm" "cache_cpu" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "cache_memory" {
-  count               = local.enabled ? 1 : 0
-  alarm_name          = "${module.this.id}-freeable-memory"
+  count               = var.enabled ? 1 : 0
+  alarm_name          = "${module.label.id}-freeable-memory"
   alarm_description   = "Memcached cluster freeable memory"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 1
@@ -140,7 +150,7 @@ resource "aws_cloudwatch_metric_alarm" "cache_memory" {
   threshold = var.alarm_memory_threshold_bytes
 
   dimensions = {
-    CacheClusterId = module.this.id
+    CacheClusterId = module.label.id
   }
 
   alarm_actions = var.alarm_actions
@@ -148,12 +158,10 @@ resource "aws_cloudwatch_metric_alarm" "cache_memory" {
 }
 
 module "dns" {
-  source  = "cloudposse/route53-cluster-hostname/aws"
-  version = "0.10.0"
-  enabled = local.enabled && var.zone_id != "" ? true : false
+  source  = "git::https://github.com/cloudposse/terraform-aws-route53-cluster-hostname.git?ref=tags/0.3.0"
+  enabled = var.enabled && var.zone_id != "" ? true : false
+  name    = var.name
   ttl     = 60
   zone_id = var.zone_id
   records = [join("", aws_elasticache_cluster.default.*.cluster_address)]
-
-  context = module.this.context
 }
