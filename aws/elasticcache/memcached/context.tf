@@ -19,8 +19,7 @@
 #
 
 module "this" {
-  source  = "cloudposse/label/null"
-  version = "0.22.1" // requires Terraform >= 0.12.26
+  source  = "github.com/access55/terraform-modules/tree/main/aws/label/null"
 
   enabled             = var.enabled
   namespace           = var.namespace
