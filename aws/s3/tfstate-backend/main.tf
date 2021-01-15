@@ -14,7 +14,27 @@ locals {
 
   terraform_backend_config_template_file = var.terraform_backend_config_template_file != "" ? var.terraform_backend_config_template_file : "${path.module}/templates/terraform.tf.tpl"
 
-  bucket_name = var.s3_bucket_name != "" ? var.s3_bucket_name : module.this.id
+  bucket_name = var.s3_bucket_name != "" ? var.s3_bucket_name : module.s3_bucket_label.id
+}
+
+module "base_label" {
+  source              = "git::https://github.com/cloudposse/terraform-null-label.git?ref=tags/0.16.0"
+  namespace           = var.namespace
+  environment         = var.environment
+  stage               = var.stage
+  name                = var.name
+  delimiter           = var.delimiter
+  attributes          = var.attributes
+  tags                = var.tags
+  additional_tag_map  = var.additional_tag_map
+  context             = var.context
+  label_order         = var.label_order
+  regex_replace_chars = var.regex_replace_chars
+}
+
+module "s3_bucket_label" {
+  source  = "git::https://github.com/cloudposse/terraform-null-label.git?ref=tags/0.16.0"
+  context = module.base_label.context
 }
 
 data "aws_iam_policy_document" "prevent_unencrypted_uploads" {
@@ -31,7 +51,7 @@ data "aws_iam_policy_document" "prevent_unencrypted_uploads" {
     }
 
     actions = [
-      "s3:PutObject"
+      "s3:PutObject",
     ]
 
     resources = [
@@ -44,7 +64,6 @@ data "aws_iam_policy_document" "prevent_unencrypted_uploads" {
 
       values = [
         "AES256",
-        "aws:kms"
       ]
     }
   }
@@ -60,7 +79,7 @@ data "aws_iam_policy_document" "prevent_unencrypted_uploads" {
     }
 
     actions = [
-      "s3:PutObject"
+      "s3:PutObject",
     ]
 
     resources = [
@@ -72,7 +91,7 @@ data "aws_iam_policy_document" "prevent_unencrypted_uploads" {
       variable = "s3:x-amz-server-side-encryption"
 
       values = [
-        "true"
+        "true",
       ]
     }
   }
@@ -105,6 +124,7 @@ data "aws_iam_policy_document" "prevent_unencrypted_uploads" {
 resource "aws_s3_bucket" "default" {
   bucket        = substr(local.bucket_name, 0, 63)
   acl           = var.acl
+  region        = var.region
   force_destroy = var.force_destroy
   policy        = local.policy
 
@@ -121,25 +141,7 @@ resource "aws_s3_bucket" "default" {
     }
   }
 
-  dynamic "replication_configuration" {
-    for_each = var.s3_replication_enabled ? toset([var.s3_replica_bucket_arn]) : []
-    content {
-      role = aws_iam_role.replication[0].arn
-
-      rules {
-        id     = module.this.id
-        prefix = ""
-        status = "Enabled"
-
-        destination {
-          bucket        = var.s3_replica_bucket_arn
-          storage_class = "STANDARD"
-        }
-      }
-    }
-  }
-
-  tags = module.this.tags
+  tags = module.s3_bucket_label.tags
 }
 
 resource "aws_s3_bucket_public_access_block" "default" {
@@ -152,9 +154,9 @@ resource "aws_s3_bucket_public_access_block" "default" {
 }
 
 module "dynamodb_table_label" {
-  source     = "git::https://github.com/cloudposse/terraform-null-label.git?ref=tags/0.22.0"
+  source     = "git::https://github.com/cloudposse/terraform-null-label.git?ref=tags/0.16.0"
+  context    = module.base_label.context
   attributes = compact(concat(var.attributes, ["lock"]))
-  context    = module.this.context
 }
 
 resource "aws_dynamodb_table" "with_server_side_encryption" {
@@ -221,13 +223,11 @@ resource "aws_dynamodb_table" "without_server_side_encryption" {
   tags = module.dynamodb_table_label.tags
 }
 
-data "aws_region" "current" {}
-
 data "template_file" "terraform_backend_config" {
   template = file(local.terraform_backend_config_template_file)
 
   vars = {
-    region = data.aws_region.current.name
+    region = var.region
     bucket = aws_s3_bucket.default.id
 
     dynamodb_table = element(
@@ -243,16 +243,11 @@ data "template_file" "terraform_backend_config" {
     profile              = var.profile
     terraform_version    = var.terraform_version
     terraform_state_file = var.terraform_state_file
-    namespace            = var.namespace
-    stage                = var.stage
-    environment          = var.environment
-    name                 = var.name
   }
 }
 
 resource "local_file" "terraform_backend_config" {
-  count           = var.terraform_backend_config_file_path != "" ? 1 : 0
-  content         = data.template_file.terraform_backend_config.rendered
-  filename        = local.terraform_backend_config_file
-  file_permission = "0644"
+  count    = var.terraform_backend_config_file_path != "" ? 1 : 0
+  content  = data.template_file.terraform_backend_config.rendered
+  filename = local.terraform_backend_config_file
 }
