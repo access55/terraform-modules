@@ -1,20 +1,23 @@
 locals {
-  enabled                                         = module.this.enabled
-  enable_default_security_group_with_custom_rules = var.enable_default_security_group_with_custom_rules && local.enabled ? 1 : 0
-  enable_internet_gateway                         = var.enable_internet_gateway && local.enabled ? 1 : 0
-  additional_cidr_blocks_defined                  = local.enabled && var.additional_cidr_blocks != null ? true : false
-  additional_cidr_blocks                          = local.additional_cidr_blocks_defined ? var.additional_cidr_blocks : []
+  enable_default_security_group_with_custom_rules = var.enable_default_security_group_with_custom_rules && var.enabled ? 1 : 0
+  enable_internet_gateway                         = var.enable_internet_gateway && var.enabled ? 1 : 0
 }
 
-module "label" {
-  source  = "cloudposse/label/null"
-  version = "0.22.0"
 
-  context = module.this.context
+module "label" {
+  source      = "git::https://github.com/cloudposse/terraform-null-label.git?ref=tags/0.16.0"
+  namespace   = var.namespace
+  name        = var.name
+  stage       = var.stage
+  environment = var.environment
+  delimiter   = var.delimiter
+  attributes  = var.attributes
+  tags        = var.tags
+  enabled     = var.enabled
 }
 
 resource "aws_vpc" "default" {
-  count                            = local.enabled ? 1 : 0
+  count                            = var.enabled ? 1 : 0
   cidr_block                       = var.cidr_block
   instance_tenancy                 = var.instance_tenancy
   enable_dns_hostnames             = var.enable_dns_hostnames
@@ -37,10 +40,4 @@ resource "aws_internet_gateway" "default" {
   count  = local.enable_internet_gateway
   vpc_id = join("", aws_vpc.default.*.id)
   tags   = module.label.tags
-}
-
-resource "aws_vpc_ipv4_cidr_block_association" "default" {
-  for_each   = toset(local.additional_cidr_blocks)
-  vpc_id     = join("", aws_vpc.default.*.id)
-  cidr_block = each.key
 }

@@ -1,3 +1,50 @@
+variable "namespace" {
+  description = "Namespace (e.g. `cp` or `cloudposse`)"
+  type        = string
+  default     = ""
+}
+
+variable "environment" {
+  type        = string
+  default     = ""
+  description = "Environment, e.g. 'prod', 'staging', 'dev', 'pre-prod', 'UAT'"
+}
+
+variable "stage" {
+  description = "Stage (e.g. `prod`, `dev`, `staging`)"
+  type        = string
+  default     = ""
+}
+
+variable "name" {
+  description = "Name  (e.g. `app` or `cluster`)"
+  type        = string
+}
+
+variable "delimiter" {
+  type        = string
+  default     = "-"
+  description = "Delimiter to be used between `namespace`, `stage`, `name` and `attributes`"
+}
+
+variable "attributes" {
+  type        = list(string)
+  default     = []
+  description = "Additional attributes (e.g. `1`)"
+}
+
+variable "tags" {
+  type        = map(string)
+  default     = {}
+  description = "Additional tags (e.g. map(`BusinessUnit`,`XYZ`)"
+}
+
+variable "enabled" {
+  type        = bool
+  default     = true
+  description = "Set to false to prevent the module from creating any resources"
+}
+
 variable "cidr_block" {
   type        = string
   description = "CIDR for the VPC"
@@ -43,10 +90,4 @@ variable "enable_internet_gateway" {
   type        = bool
   description = "A boolean flag to enable/disable Internet Gateway creation"
   default     = true
-}
-
-variable "additional_cidr_blocks" {
-  type        = list(string)
-  description = "A list of additional IPv4 CIDR blocks to associate with the VPC"
-  default     = null
 }
