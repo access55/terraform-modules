@@ -1,295 +1,200 @@
-variable "ssh_key_pair" {
-  type        = string
-  description = "SSH key pair to be provisioned on the instance"
-}
-
-variable "associate_public_ip_address" {
-  type        = bool
-  description = "Associate a public IP address with the instance"
-  default     = true
-}
-
-variable "assign_eip_address" {
-  type        = bool
-  description = "Assign an Elastic IP address to the instance"
-  default     = true
-}
-
-variable "user_data" {
-  type        = string
-  description = "Instance user data. Do not pass gzip-compressed data via this argument"
-  default     = ""
-}
-
-variable "instance_type" {
-  type        = string
-  description = "The type of the instance"
-  default     = "t2.micro"
-}
-
-variable "vpc_id" {
-  type        = string
-  description = "The ID of the VPC that the instance security group belongs to"
-}
-
-variable "security_groups" {
-  description = "List of Security Group IDs allowed to connect to the instance"
-  type        = list(string)
-  default     = []
-}
-
-variable "allowed_ports" {
-  type        = list(number)
-  description = "List of allowed ingress ports"
-  default     = []
-}
-
-variable "subnet" {
-  type        = string
-  description = "VPC Subnet ID the instance is launched in"
-}
-
-variable "namespace" {
-  type        = string
-  description = "Namespace (e.g. `cp` or `cloudposse`)"
-  default     = ""
-}
-
-variable "stage" {
-  type        = string
-  description = "Stage (e.g. `prod`, `dev`, `staging`"
-  default     = ""
-}
-
-variable "environment" {
-  type        = string
-  description = "Environment, e.g. 'prod', 'staging', 'dev', 'pre-prod', 'UAT'"
-  default     = ""
-}
-
 variable "name" {
+  description = "Name to be used on all resources as prefix"
   type        = string
-  description = "Name  (e.g. `bastion` or `db`)"
 }
 
-variable "delimiter" {
-  type        = string
-  default     = "-"
-  description = "Delimiter to be used between `name`, `namespace`, `stage`, etc."
-}
-
-variable "attributes" {
-  description = "Additional attributes (e.g. `1`)"
-  type        = list(string)
-  default     = []
-}
-
-variable "tags" {
-  description = "Additional tags"
-  type        = map(string)
-  default     = {}
-}
-
-variable "region" {
-  type        = string
-  description = "AWS Region the instance is launched in"
-  default     = ""
-}
-
-variable "availability_zone" {
-  type        = string
-  description = "Availability Zone the instance is launched in. If not set, will be launched in the first AZ of the region"
-  default     = ""
+variable "instance_count" {
+  description = "Number of instances to launch"
+  type        = number
+  default     = 1
 }
 
 variable "ami" {
+  description = "ID of AMI to use for the instance"
   type        = string
-  description = "The AMI to use for the instance. By default it is the AMI provided by Amazon with Ubuntu 16.04"
+}
+
+variable "placement_group" {
+  description = "The Placement Group to start the instance in"
+  type        = string
   default     = ""
 }
 
-variable "ami_owner" {
+variable "get_password_data" {
+  description = "If true, wait for password data to become available and retrieve it."
+  type        = bool
+  default     = false
+}
+
+variable "tenancy" {
+  description = "The tenancy of the instance (if the instance is running in a VPC). Available values: default, dedicated, host."
   type        = string
-  description = "Owner of the given AMI (ignored if `ami` unset)"
-  default     = ""
+  default     = "default"
 }
 
 variable "ebs_optimized" {
+  description = "If true, the launched EC2 instance will be EBS-optimized"
   type        = bool
-  description = "Launched EC2 instance will be EBS-optimized"
   default     = false
 }
 
 variable "disable_api_termination" {
+  description = "If true, enables EC2 Instance Termination Protection"
   type        = bool
-  description = "Enable EC2 Instance Termination Protection"
   default     = false
 }
 
-variable "monitoring" {
-  type        = bool
-  description = "Launched EC2 instance will have detailed monitoring enabled"
-  default     = true
-}
-
-variable "private_ip" {
+variable "instance_initiated_shutdown_behavior" {
+  description = "Shutdown behavior for the instance" # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/terminating-instances.html#Using_ChangingInstanceInitiatedShutdownBehavior
   type        = string
-  description = "Private IP address to associate with the instance in the VPC"
   default     = ""
 }
 
-variable "source_dest_check" {
+variable "instance_type" {
+  description = "The type of instance to start"
+  type        = string
+}
+
+variable "key_name" {
+  description = "The key name to use for the instance"
+  type        = string
+  default     = ""
+}
+
+variable "monitoring" {
+  description = "If true, the launched EC2 instance will have detailed monitoring enabled"
   type        = bool
-  description = "Controls if traffic is routed to the instance when the destination address does not match the instance. Used for NAT or VPNs"
-  default     = true
+  default     = false
 }
 
-variable "ipv6_address_count" {
-  type        = number
-  description = "Number of IPv6 addresses to associate with the primary network interface. Amazon EC2 chooses the IPv6 addresses from the range of your subnet (-1 to use subnet default)"
-  default     = 0
-}
-
-variable "ipv6_addresses" {
+variable "vpc_security_group_ids" {
+  description = "A list of security group IDs to associate with"
   type        = list(string)
-  description = "List of IPv6 addresses from the range of the subnet to associate with the primary network interface"
+  default     = null
+}
+
+variable "subnet_id" {
+  description = "The VPC Subnet ID to launch in"
+  type        = string
+  default     = ""
+}
+
+variable "subnet_ids" {
+  description = "A list of VPC Subnet IDs to launch in"
+  type        = list(string)
   default     = []
 }
 
-variable "root_volume_type" {
+variable "associate_public_ip_address" {
+  description = "If true, the EC2 instance will have associated public IP address"
+  type        = bool
+  default     = null
+}
+
+variable "private_ip" {
+  description = "Private IP address to associate with the instance in a VPC"
   type        = string
-  description = "Type of root volume. Can be standard, gp2 or io1"
-  default     = "gp2"
+  default     = null
 }
 
-variable "root_volume_size" {
-  type        = number
-  description = "Size of the root volume in gigabytes"
-  default     = 10
-}
-
-variable "root_iops" {
-  type        = number
-  description = "Amount of provisioned IOPS. This must be set if root_volume_type is set to `io1`"
-  default     = 0
-}
-
-variable "ebs_device_name" {
+variable "private_ips" {
+  description = "A list of private IP address to associate with the instance in a VPC. Should match the number of instances."
   type        = list(string)
-  description = "Name of the EBS device to mount"
-  default     = ["/dev/xvdb", "/dev/xvdc", "/dev/xvdd", "/dev/xvde", "/dev/xvdf", "/dev/xvdg", "/dev/xvdh", "/dev/xvdi", "/dev/xvdj", "/dev/xvdk", "/dev/xvdl", "/dev/xvdm", "/dev/xvdn", "/dev/xvdo", "/dev/xvdp", "/dev/xvdq", "/dev/xvdr", "/dev/xvds", "/dev/xvdt", "/dev/xvdu", "/dev/xvdv", "/dev/xvdw", "/dev/xvdx", "/dev/xvdy", "/dev/xvdz"]
+  default     = []
 }
 
-variable "ebs_volume_type" {
-  type        = string
-  description = "The type of EBS volume. Can be standard, gp2 or io1"
-  default     = "gp2"
-}
-
-variable "ebs_volume_size" {
-  type        = number
-  description = "Size of the EBS volume in gigabytes"
-  default     = 10
-}
-
-variable "ebs_iops" {
-  type        = number
-  description = "Amount of provisioned IOPS. This must be set with a volume_type of io1"
-  default     = 0
-}
-
-variable "ebs_volume_count" {
-  type        = number
-  description = "Count of EBS volumes that will be attached to the instance"
-  default     = 0
-}
-
-variable "delete_on_termination" {
+variable "source_dest_check" {
+  description = "Controls if traffic is routed to the instance when the destination address does not match the instance. Used for NAT or VPNs."
   type        = bool
-  description = "Whether the volume should be destroyed on instance termination"
   default     = true
 }
 
-variable "welcome_message" {
+variable "user_data" {
+  description = "The user data to provide when launching the instance. Do not pass gzip-compressed data via this argument; see user_data_base64 instead."
+  type        = string
+  default     = null
+}
+
+variable "user_data_base64" {
+  description = "Can be used instead of user_data to pass base64-encoded binary data directly. Use this instead of user_data whenever the value is not a valid UTF-8 string. For example, gzip-encoded user data must be base64-encoded and passed via this argument to avoid corruption."
+  type        = string
+  default     = null
+}
+
+variable "iam_instance_profile" {
+  description = "The IAM Instance Profile to launch the instance with. Specified as the name of the Instance Profile."
   type        = string
   default     = ""
-  description = "Welcome message"
 }
 
-variable "comparison_operator" {
-  type        = string
-  description = "The arithmetic operation to use when comparing the specified Statistic and Threshold. Possible values are: GreaterThanOrEqualToThreshold, GreaterThanThreshold, LessThanThreshold, LessThanOrEqualToThreshold."
-  default     = "GreaterThanOrEqualToThreshold"
-}
-
-variable "metric_name" {
-  type        = string
-  description = "The name for the alarm's associated metric. Allowed values can be found in https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/ec2-metricscollected.html"
-  default     = "StatusCheckFailed_Instance"
-}
-
-variable "evaluation_periods" {
+variable "ipv6_address_count" {
+  description = "A number of IPv6 addresses to associate with the primary network interface. Amazon EC2 chooses the IPv6 addresses from the range of your subnet."
   type        = number
-  description = "The number of periods over which data is compared to the specified threshold."
-  default     = 5
+  default     = null
 }
 
-variable "metric_namespace" {
+variable "ipv6_addresses" {
+  description = "Specify one or more IPv6 addresses from the range of the subnet to associate with the primary network interface"
+  type        = list(string)
+  default     = null
+}
+
+variable "tags" {
+  description = "A mapping of tags to assign to the resource"
+  type        = map(string)
+  default     = {}
+}
+
+variable "volume_tags" {
+  description = "A mapping of tags to assign to the devices created by the instance at launch time"
+  type        = map(string)
+  default     = {}
+}
+
+variable "root_block_device" {
+  description = "Customize details about the root block device of the instance. See Block Devices below for details"
+  type        = list(map(string))
+  default     = []
+}
+
+variable "ebs_block_device" {
+  description = "Additional EBS block devices to attach to the instance"
+  type        = list(map(string))
+  default     = []
+}
+
+variable "ephemeral_block_device" {
+  description = "Customize Ephemeral (also known as Instance Store) volumes on the instance"
+  type        = list(map(string))
+  default     = []
+}
+
+variable "network_interface" {
+  description = "Customize network interfaces to be attached at instance boot time"
+  type        = list(map(string))
+  default     = []
+}
+
+variable "cpu_credits" {
+  description = "The credit option for CPU usage (unlimited or standard)"
   type        = string
-  description = "The namespace for the alarm's associated metric. Allowed values can be found in https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/aws-namespaces.html"
-  default     = "AWS/EC2"
+  default     = "standard"
 }
 
-variable "applying_period" {
-  type        = number
-  description = "The period in seconds over which the specified statistic is applied"
-  default     = 60
+variable "metadata_options" {
+  description = "Customize the metadata options of the instance"
+  type        = map(string)
+  default     = {}
 }
 
-variable "statistic_level" {
-  type        = string
-  description = "The statistic to apply to the alarm's associated metric. Allowed values are: SampleCount, Average, Sum, Minimum, Maximum"
-  default     = "Maximum"
-}
-
-variable "metric_threshold" {
-  type        = number
-  description = "The value against which the specified statistic is compared"
-  default     = 1
-}
-
-variable "default_alarm_action" {
-  type        = string
-  default     = "action/actions/AWS_EC2.InstanceId.Reboot/1.0"
-  description = "Default alerm action"
-}
-
-variable "create_default_security_group" {
+variable "use_num_suffix" {
+  description = "Always append numerical suffix to instance name, even if instance_count is 1"
   type        = bool
-  description = "Create default Security Group with only Egress traffic allowed"
-  default     = true
+  default     = false
 }
 
-variable "instance_enabled" {
-  type        = bool
-  description = "Flag to control the instance creation. Set to false if it is necessary to skip instance creation"
-  default     = true
-}
-
-variable "additional_ips_count" {
-  type        = number
-  description = "Count of additional EIPs"
-  default     = 0
-}
-
-variable "permissions_boundary_arn" {
+variable "num_suffix_format" {
+  description = "Numerical suffix format used as the volume and EC2 instance name suffix"
   type        = string
-  description = "Policy ARN to attach to instance role as a permissions boundary"
-  default     = ""
-}
-
-variable "instance_profile" {
-  type        = string
-  description = "A pre-defined profile to attach to the instance (default is to build our own)"
-  default     = ""
+  default     = "-%d"
 }
