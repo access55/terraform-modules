@@ -1,273 +1,172 @@
-resource "aws_s3_bucket" "this" {
-  count = var.create_bucket ? 1 : 0
+module "label" {
+  source      = "git::https://github.com/cloudposse/terraform-null-label.git?ref=tags/0.16.0"
+  enabled     = var.enabled
+  namespace   = var.namespace
+  environment = var.environment
+  stage       = var.stage
+  name        = var.name
+  delimiter   = var.delimiter
+  attributes  = var.attributes
+  tags        = var.tags
+}
 
-  bucket              = var.bucket
-  bucket_prefix       = var.bucket_prefix
-  acl                 = var.acl
-  tags                = var.tags
-  force_destroy       = var.force_destroy
-  acceleration_status = var.acceleration_status
-  request_payer       = var.request_payer
+resource "aws_s3_bucket" "default" {
+  count         = var.enabled ? 1 : 0
+  bucket        = module.label.id
+  acl           = try(length(var.grants), 0) == 0 ? var.acl : null
+  region        = var.region
+  force_destroy = var.force_destroy
+  policy        = var.policy
+  tags          = module.label.tags
 
-  dynamic "website" {
-    for_each = length(keys(var.website)) == 0 ? [] : [var.website]
+  versioning {
+    enabled = var.versioning_enabled
+  }
 
-    content {
-      index_document           = lookup(website.value, "index_document", null)
-      error_document           = lookup(website.value, "error_document", null)
-      redirect_all_requests_to = lookup(website.value, "redirect_all_requests_to", null)
-      routing_rules            = lookup(website.value, "routing_rules", null)
+  lifecycle_rule {
+    id                                     = module.label.id
+    enabled                                = var.lifecycle_rule_enabled
+    prefix                                 = var.prefix
+    tags                                   = var.lifecycle_tags
+    abort_incomplete_multipart_upload_days = var.abort_incomplete_multipart_upload_days
+
+    noncurrent_version_expiration {
+      days = var.noncurrent_version_expiration_days
+    }
+
+    dynamic "noncurrent_version_transition" {
+      for_each = var.enable_glacier_transition ? [1] : []
+
+      content {
+        days          = var.noncurrent_version_transition_days
+        storage_class = "GLACIER"
+      }
+    }
+
+    dynamic "transition" {
+      for_each = var.enable_glacier_transition ? [1] : []
+
+      content {
+        days          = var.glacier_transition_days
+        storage_class = "GLACIER"
+      }
+    }
+
+    dynamic "transition" {
+      for_each = var.enable_standard_ia_transition ? [1] : []
+
+      content {
+        days          = var.standard_transition_days
+        storage_class = "STANDARD_IA"
+      }
+    }
+
+    expiration {
+      days = var.expiration_days
+    }
+  }
+
+  # https://docs.aws.amazon.com/AmazonS3/latest/dev/bucket-encryption.html
+  # https://www.terraform.io/docs/providers/aws/r/s3_bucket.html#enable-default-server-side-encryption
+  server_side_encryption_configuration {
+    rule {
+      apply_server_side_encryption_by_default {
+        sse_algorithm     = var.sse_algorithm
+        kms_master_key_id = var.kms_master_key_arn
+      }
     }
   }
 
   dynamic "cors_rule" {
-    for_each = var.cors_rule
+    for_each = var.cors_rule_inputs == null ? [] : var.cors_rule_inputs
 
     content {
+      allowed_headers = cors_rule.value.allowed_headers
       allowed_methods = cors_rule.value.allowed_methods
       allowed_origins = cors_rule.value.allowed_origins
-      allowed_headers = lookup(cors_rule.value, "allowed_headers", null)
-      expose_headers  = lookup(cors_rule.value, "expose_headers", null)
-      max_age_seconds = lookup(cors_rule.value, "max_age_seconds", null)
-    }
-  }
-
-  dynamic "versioning" {
-    for_each = length(keys(var.versioning)) == 0 ? [] : [var.versioning]
-
-    content {
-      enabled    = lookup(versioning.value, "enabled", null)
-      mfa_delete = lookup(versioning.value, "mfa_delete", null)
-    }
-  }
-
-  dynamic "logging" {
-    for_each = length(keys(var.logging)) == 0 ? [] : [var.logging]
-
-    content {
-      target_bucket = logging.value.target_bucket
-      target_prefix = lookup(logging.value, "target_prefix", null)
+      expose_headers  = cors_rule.value.expose_headers
+      max_age_seconds = cors_rule.value.max_age_seconds
     }
   }
 
   dynamic "grant" {
-    for_each = var.grant
+    for_each = try(length(var.grants), 0) == 0 || try(length(var.acl), 0) > 0 ? [] : var.grants
 
     content {
-      id          = lookup(grant.value, "id", null)
+      id          = grant.value.id
       type        = grant.value.type
       permissions = grant.value.permissions
-      uri         = lookup(grant.value, "uri", null)
+      uri         = grant.value.uri
     }
   }
-
-  dynamic "lifecycle_rule" {
-    for_each = var.lifecycle_rule
-
-    content {
-      id                                     = lookup(lifecycle_rule.value, "id", null)
-      prefix                                 = lookup(lifecycle_rule.value, "prefix", null)
-      tags                                   = lookup(lifecycle_rule.value, "tags", null)
-      abort_incomplete_multipart_upload_days = lookup(lifecycle_rule.value, "abort_incomplete_multipart_upload_days", null)
-      enabled                                = lifecycle_rule.value.enabled
-
-      # Max 1 block - expiration
-      dynamic "expiration" {
-        for_each = length(keys(lookup(lifecycle_rule.value, "expiration", {}))) == 0 ? [] : [lookup(lifecycle_rule.value, "expiration", {})]
-
-        content {
-          date                         = lookup(expiration.value, "date", null)
-          days                         = lookup(expiration.value, "days", null)
-          expired_object_delete_marker = lookup(expiration.value, "expired_object_delete_marker", null)
-        }
-      }
-
-      # Several blocks - transition
-      dynamic "transition" {
-        for_each = lookup(lifecycle_rule.value, "transition", [])
-
-        content {
-          date          = lookup(transition.value, "date", null)
-          days          = lookup(transition.value, "days", null)
-          storage_class = transition.value.storage_class
-        }
-      }
-
-      # Max 1 block - noncurrent_version_expiration
-      dynamic "noncurrent_version_expiration" {
-        for_each = length(keys(lookup(lifecycle_rule.value, "noncurrent_version_expiration", {}))) == 0 ? [] : [lookup(lifecycle_rule.value, "noncurrent_version_expiration", {})]
-
-        content {
-          days = lookup(noncurrent_version_expiration.value, "days", null)
-        }
-      }
-
-      # Several blocks - noncurrent_version_transition
-      dynamic "noncurrent_version_transition" {
-        for_each = lookup(lifecycle_rule.value, "noncurrent_version_transition", [])
-
-        content {
-          days          = lookup(noncurrent_version_transition.value, "days", null)
-          storage_class = noncurrent_version_transition.value.storage_class
-        }
-      }
-    }
-  }
-
-  # Max 1 block - replication_configuration
-  dynamic "replication_configuration" {
-    for_each = length(keys(var.replication_configuration)) == 0 ? [] : [var.replication_configuration]
-
-    content {
-      role = replication_configuration.value.role
-
-      dynamic "rules" {
-        for_each = replication_configuration.value.rules
-
-        content {
-          id       = lookup(rules.value, "id", null)
-          priority = lookup(rules.value, "priority", null)
-          prefix   = lookup(rules.value, "prefix", null)
-          status   = rules.value.status
-
-          dynamic "destination" {
-            for_each = length(keys(lookup(rules.value, "destination", {}))) == 0 ? [] : [lookup(rules.value, "destination", {})]
-
-            content {
-              bucket             = destination.value.bucket
-              storage_class      = lookup(destination.value, "storage_class", null)
-              replica_kms_key_id = lookup(destination.value, "replica_kms_key_id", null)
-              account_id         = lookup(destination.value, "account_id", null)
-
-              dynamic "access_control_translation" {
-                for_each = length(keys(lookup(destination.value, "access_control_translation", {}))) == 0 ? [] : [lookup(destination.value, "access_control_translation", {})]
-
-                content {
-                  owner = access_control_translation.value.owner
-                }
-              }
-            }
-          }
-
-          dynamic "source_selection_criteria" {
-            for_each = length(keys(lookup(rules.value, "source_selection_criteria", {}))) == 0 ? [] : [lookup(rules.value, "source_selection_criteria", {})]
-
-            content {
-
-              dynamic "sse_kms_encrypted_objects" {
-                for_each = length(keys(lookup(source_selection_criteria.value, "sse_kms_encrypted_objects", {}))) == 0 ? [] : [lookup(source_selection_criteria.value, "sse_kms_encrypted_objects", {})]
-
-                content {
-
-                  enabled = sse_kms_encrypted_objects.value.enabled
-                }
-              }
-            }
-          }
-
-          dynamic "filter" {
-            for_each = length(keys(lookup(rules.value, "filter", {}))) == 0 ? [] : [lookup(rules.value, "filter", {})]
-
-            content {
-              prefix = lookup(filter.value, "prefix", null)
-              tags   = lookup(filter.value, "tags", null)
-            }
-          }
-
-        }
-      }
-    }
-  }
-
-  # Max 1 block - server_side_encryption_configuration
-  dynamic "server_side_encryption_configuration" {
-    for_each = length(keys(var.server_side_encryption_configuration)) == 0 ? [] : [var.server_side_encryption_configuration]
-
-    content {
-
-      dynamic "rule" {
-        for_each = length(keys(lookup(server_side_encryption_configuration.value, "rule", {}))) == 0 ? [] : [lookup(server_side_encryption_configuration.value, "rule", {})]
-
-        content {
-
-          dynamic "apply_server_side_encryption_by_default" {
-            for_each = length(keys(lookup(rule.value, "apply_server_side_encryption_by_default", {}))) == 0 ? [] : [
-            lookup(rule.value, "apply_server_side_encryption_by_default", {})]
-
-            content {
-              sse_algorithm     = apply_server_side_encryption_by_default.value.sse_algorithm
-              kms_master_key_id = lookup(apply_server_side_encryption_by_default.value, "kms_master_key_id", null)
-            }
-          }
-        }
-      }
-    }
-  }
-
-  # Max 1 block - object_lock_configuration
-  dynamic "object_lock_configuration" {
-    for_each = length(keys(var.object_lock_configuration)) == 0 ? [] : [var.object_lock_configuration]
-
-    content {
-      object_lock_enabled = object_lock_configuration.value.object_lock_enabled
-
-      dynamic "rule" {
-        for_each = length(keys(lookup(object_lock_configuration.value, "rule", {}))) == 0 ? [] : [lookup(object_lock_configuration.value, "rule", {})]
-
-        content {
-          default_retention {
-            mode  = lookup(lookup(rule.value, "default_retention", {}), "mode")
-            days  = lookup(lookup(rule.value, "default_retention", {}), "days", null)
-            years = lookup(lookup(rule.value, "default_retention", {}), "years", null)
-          }
-        }
-      }
-    }
-  }
-
 }
 
-resource "aws_s3_bucket_policy" "this" {
-  count = var.create_bucket && (var.attach_elb_log_delivery_policy || var.attach_policy) ? 1 : 0
-
-  bucket = aws_s3_bucket.this[0].id
-  policy = var.attach_elb_log_delivery_policy ? data.aws_iam_policy_document.elb_log_delivery[0].json : var.policy
+module "s3_user" {
+  source       = "git::https://github.com/cloudposse/terraform-aws-iam-s3-user.git?ref=tags/0.6.0"
+  namespace    = var.namespace
+  stage        = var.stage
+  environment  = var.environment
+  name         = var.name
+  attributes   = var.attributes
+  tags         = var.tags
+  enabled      = var.enabled && var.user_enabled ? true : false
+  s3_actions   = var.allowed_bucket_actions
+  s3_resources = ["${join("", aws_s3_bucket.default.*.arn)}/*", join("", aws_s3_bucket.default.*.arn)]
 }
 
-# AWS Load Balancer access log delivery policy
-data "aws_elb_service_account" "this" {
-  count = var.create_bucket && var.attach_elb_log_delivery_policy ? 1 : 0
-}
-
-data "aws_iam_policy_document" "elb_log_delivery" {
-  count = var.create_bucket && var.attach_elb_log_delivery_policy ? 1 : 0
+data "aws_iam_policy_document" "bucket_policy" {
+  count = var.enabled && var.allow_encrypted_uploads_only ? 1 : 0
 
   statement {
-    sid = ""
+    sid       = "DenyIncorrectEncryptionHeader"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["arn:aws:s3:::${join("", aws_s3_bucket.default.*.id)}/*"]
 
     principals {
-      type        = "AWS"
-      identifiers = data.aws_elb_service_account.this.*.arn
+      identifiers = ["*"]
+      type        = "*"
     }
 
-    effect = "Allow"
+    condition {
+      test     = "StringNotEquals"
+      values   = [var.sse_algorithm]
+      variable = "s3:x-amz-server-side-encryption"
+    }
+  }
 
-    actions = [
-      "s3:PutObject",
-    ]
+  statement {
+    sid       = "DenyUnEncryptedObjectUploads"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["arn:aws:s3:::${join("", aws_s3_bucket.default.*.id)}/*"]
 
-    resources = [
-      "${aws_s3_bucket.this[0].arn}/*",
-    ]
+    principals {
+      identifiers = ["*"]
+      type        = "*"
+    }
+
+    condition {
+      test     = "Null"
+      values   = ["true"]
+      variable = "s3:x-amz-server-side-encryption"
+    }
   }
 }
 
-resource "aws_s3_bucket_public_access_block" "this" {
-  count = var.create_bucket && var.attach_public_policy ? 1 : 0
+resource "aws_s3_bucket_policy" "default" {
+  count      = var.enabled && var.allow_encrypted_uploads_only ? 1 : 0
+  bucket     = join("", aws_s3_bucket.default.*.id)
+  policy     = join("", data.aws_iam_policy_document.bucket_policy.*.json)
+  depends_on = [aws_s3_bucket_public_access_block.default]
+}
 
-  # Chain resources (s3_bucket -> s3_bucket_policy -> s3_bucket_public_access_block)
-  # to prevent "A conflicting conditional operation is currently in progress against this resource."
-  bucket = (var.attach_elb_log_delivery_policy || var.attach_policy) ? aws_s3_bucket_policy.this[0].id : aws_s3_bucket.this[0].id
+# Refer to the terraform documentation on s3_bucket_public_access_block at
+# https://www.terraform.io/docs/providers/aws/r/s3_bucket_public_access_block.html
+# for the nuances of the blocking options
+resource "aws_s3_bucket_public_access_block" "default" {
+  count  = var.enabled ? 1 : 0
+  bucket = join("", aws_s3_bucket.default.*.id)
 
   block_public_acls       = var.block_public_acls
   block_public_policy     = var.block_public_policy
