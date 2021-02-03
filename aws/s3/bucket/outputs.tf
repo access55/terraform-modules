@@ -1,56 +1,39 @@
-output "bucket_domain_name" {
-  value       = var.enabled ? join("", aws_s3_bucket.default.*.bucket_domain_name) : ""
-  description = "FQDN of bucket"
+output "this_s3_bucket_id" {
+  description = "The name of the bucket."
+  value       = element(concat(aws_s3_bucket_policy.this.*.id, aws_s3_bucket.this.*.id, list("")), 0)
 }
 
-output "bucket_regional_domain_name" {
-  value       = var.enabled ? join("", aws_s3_bucket.default.*.bucket_regional_domain_name) : ""
-  description = "The bucket region-specific domain name"
+output "this_s3_bucket_arn" {
+  description = "The ARN of the bucket. Will be of format arn:aws:s3:::bucketname."
+  value       = element(concat(aws_s3_bucket.this.*.arn, list("")), 0)
 }
 
-output "bucket_id" {
-  value       = var.enabled ? join("", aws_s3_bucket.default.*.id) : ""
-  description = "Bucket Name (aka ID)"
+output "this_s3_bucket_bucket_domain_name" {
+  description = "The bucket domain name. Will be of format bucketname.s3.amazonaws.com."
+  value       = element(concat(aws_s3_bucket.this.*.bucket_domain_name, list("")), 0)
 }
 
-output "bucket_arn" {
-  value       = var.enabled ? join("", aws_s3_bucket.default.*.arn) : ""
-  description = "Bucket ARN"
+output "this_s3_bucket_bucket_regional_domain_name" {
+  description = "The bucket region-specific domain name. The bucket domain name including the region name, please refer here for format. Note: The AWS CloudFront allows specifying S3 region-specific endpoint when creating S3 origin, it will prevent redirect issues from CloudFront to S3 Origin URL."
+  value       = element(concat(aws_s3_bucket.this.*.bucket_regional_domain_name, list("")), 0)
 }
 
-output "enabled" {
-  value       = var.enabled
-  description = "Is module enabled"
+output "this_s3_bucket_hosted_zone_id" {
+  description = "The Route 53 Hosted Zone ID for this bucket's region."
+  value       = element(concat(aws_s3_bucket.this.*.hosted_zone_id, list("")), 0)
 }
 
-output "user_enabled" {
-  value       = var.user_enabled
-  description = "Is user creation enabled"
+output "this_s3_bucket_region" {
+  description = "The AWS region this bucket resides in."
+  value       = element(concat(aws_s3_bucket.this.*.region, list("")), 0)
 }
 
-output "user_name" {
-  value       = module.s3_user.user_name
-  description = "Normalized IAM user name"
+output "this_s3_bucket_website_endpoint" {
+  description = "The website endpoint, if the bucket is configured with a website. If not, this will be an empty string."
+  value       = element(concat(aws_s3_bucket.this.*.website_endpoint, list("")), 0)
 }
 
-output "user_arn" {
-  value       = module.s3_user.user_arn
-  description = "The ARN assigned by AWS for the user"
-}
-
-output "user_unique_id" {
-  value       = module.s3_user.user_unique_id
-  description = "The user unique ID assigned by AWS"
-}
-
-output "access_key_id" {
-  sensitive   = true
-  value       = module.s3_user.access_key_id
-  description = "The access key ID"
-}
-
-output "secret_access_key" {
-  sensitive   = true
-  value       = module.s3_user.secret_access_key
-  description = "The secret access key. This will be written to the state file in plain-text"
+output "this_s3_bucket_website_domain" {
+  description = "The domain of the website endpoint, if the bucket is configured with a website. If not, this will be an empty string. This is used to create Route 53 alias records. "
+  value       = element(concat(aws_s3_bucket.this.*.website_domain, list("")), 0)
 }

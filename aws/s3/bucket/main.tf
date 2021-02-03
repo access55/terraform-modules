@@ -1,222 +1,276 @@
-variable "namespace" {
-  type        = string
-  default     = ""
-  description = "Namespace, which could be your organization name or abbreviation, e.g. 'eg' or 'cp'"
+resource "aws_s3_bucket" "this" {
+  count = var.create_bucket ? 1 : 0
+
+  bucket              = var.bucket
+  bucket_prefix       = var.bucket_prefix
+  acl                 = var.acl
+  tags                = var.tags
+  force_destroy       = var.force_destroy
+  acceleration_status = var.acceleration_status
+  request_payer       = var.request_payer
+
+  dynamic "website" {
+    for_each = length(keys(var.website)) == 0 ? [] : [var.website]
+
+    content {
+      index_document           = lookup(website.value, "index_document", null)
+      error_document           = lookup(website.value, "error_document", null)
+      redirect_all_requests_to = lookup(website.value, "redirect_all_requests_to", null)
+      routing_rules            = lookup(website.value, "routing_rules", null)
+    }
+  }
+
+  dynamic "cors_rule" {
+    for_each = var.cors_rule
+
+    content {
+      allowed_methods = cors_rule.value.allowed_methods
+      allowed_origins = cors_rule.value.allowed_origins
+      allowed_headers = lookup(cors_rule.value, "allowed_headers", null)
+      expose_headers  = lookup(cors_rule.value, "expose_headers", null)
+      max_age_seconds = lookup(cors_rule.value, "max_age_seconds", null)
+    }
+  }
+
+  dynamic "versioning" {
+    for_each = length(keys(var.versioning)) == 0 ? [] : [var.versioning]
+
+    content {
+      enabled    = lookup(versioning.value, "enabled", null)
+      mfa_delete = lookup(versioning.value, "mfa_delete", null)
+    }
+  }
+
+  dynamic "logging" {
+    for_each = length(keys(var.logging)) == 0 ? [] : [var.logging]
+
+    content {
+      target_bucket = logging.value.target_bucket
+      target_prefix = lookup(logging.value, "target_prefix", null)
+    }
+  }
+
+  dynamic "grant" {
+    for_each = var.grant
+
+    content {
+      id          = lookup(grant.value, "id", null)
+      type        = grant.value.type
+      permissions = grant.value.permissions
+      uri         = lookup(grant.value, "uri", null)
+    }
+  }
+
+  dynamic "lifecycle_rule" {
+    for_each = var.lifecycle_rule
+
+    content {
+      id                                     = lookup(lifecycle_rule.value, "id", null)
+      prefix                                 = lookup(lifecycle_rule.value, "prefix", null)
+      tags                                   = lookup(lifecycle_rule.value, "tags", null)
+      abort_incomplete_multipart_upload_days = lookup(lifecycle_rule.value, "abort_incomplete_multipart_upload_days", null)
+      enabled                                = lifecycle_rule.value.enabled
+
+      # Max 1 block - expiration
+      dynamic "expiration" {
+        for_each = length(keys(lookup(lifecycle_rule.value, "expiration", {}))) == 0 ? [] : [lookup(lifecycle_rule.value, "expiration", {})]
+
+        content {
+          date                         = lookup(expiration.value, "date", null)
+          days                         = lookup(expiration.value, "days", null)
+          expired_object_delete_marker = lookup(expiration.value, "expired_object_delete_marker", null)
+        }
+      }
+
+      # Several blocks - transition
+      dynamic "transition" {
+        for_each = lookup(lifecycle_rule.value, "transition", [])
+
+        content {
+          date          = lookup(transition.value, "date", null)
+          days          = lookup(transition.value, "days", null)
+          storage_class = transition.value.storage_class
+        }
+      }
+
+      # Max 1 block - noncurrent_version_expiration
+      dynamic "noncurrent_version_expiration" {
+        for_each = length(keys(lookup(lifecycle_rule.value, "noncurrent_version_expiration", {}))) == 0 ? [] : [lookup(lifecycle_rule.value, "noncurrent_version_expiration", {})]
+
+        content {
+          days = lookup(noncurrent_version_expiration.value, "days", null)
+        }
+      }
+
+      # Several blocks - noncurrent_version_transition
+      dynamic "noncurrent_version_transition" {
+        for_each = lookup(lifecycle_rule.value, "noncurrent_version_transition", [])
+
+        content {
+          days          = lookup(noncurrent_version_transition.value, "days", null)
+          storage_class = noncurrent_version_transition.value.storage_class
+        }
+      }
+    }
+  }
+
+  # Max 1 block - replication_configuration
+  dynamic "replication_configuration" {
+    for_each = length(keys(var.replication_configuration)) == 0 ? [] : [var.replication_configuration]
+
+    content {
+      role = replication_configuration.value.role
+
+      dynamic "rules" {
+        for_each = replication_configuration.value.rules
+
+        content {
+          id       = lookup(rules.value, "id", null)
+          priority = lookup(rules.value, "priority", null)
+          prefix   = lookup(rules.value, "prefix", null)
+          status   = rules.value.status
+
+          dynamic "destination" {
+            for_each = length(keys(lookup(rules.value, "destination", {}))) == 0 ? [] : [lookup(rules.value, "destination", {})]
+
+            content {
+              bucket             = destination.value.bucket
+              storage_class      = lookup(destination.value, "storage_class", null)
+              replica_kms_key_id = lookup(destination.value, "replica_kms_key_id", null)
+              account_id         = lookup(destination.value, "account_id", null)
+
+              dynamic "access_control_translation" {
+                for_each = length(keys(lookup(destination.value, "access_control_translation", {}))) == 0 ? [] : [lookup(destination.value, "access_control_translation", {})]
+
+                content {
+                  owner = access_control_translation.value.owner
+                }
+              }
+            }
+          }
+
+          dynamic "source_selection_criteria" {
+            for_each = length(keys(lookup(rules.value, "source_selection_criteria", {}))) == 0 ? [] : [lookup(rules.value, "source_selection_criteria", {})]
+
+            content {
+
+              dynamic "sse_kms_encrypted_objects" {
+                for_each = length(keys(lookup(source_selection_criteria.value, "sse_kms_encrypted_objects", {}))) == 0 ? [] : [lookup(source_selection_criteria.value, "sse_kms_encrypted_objects", {})]
+
+                content {
+
+                  enabled = sse_kms_encrypted_objects.value.enabled
+                }
+              }
+            }
+          }
+
+          dynamic "filter" {
+            for_each = length(keys(lookup(rules.value, "filter", {}))) == 0 ? [] : [lookup(rules.value, "filter", {})]
+
+            content {
+              prefix = lookup(filter.value, "prefix", null)
+              tags   = lookup(filter.value, "tags", null)
+            }
+          }
+
+        }
+      }
+    }
+  }
+
+  # Max 1 block - server_side_encryption_configuration
+  dynamic "server_side_encryption_configuration" {
+    for_each = length(keys(var.server_side_encryption_configuration)) == 0 ? [] : [var.server_side_encryption_configuration]
+
+    content {
+
+      dynamic "rule" {
+        for_each = length(keys(lookup(server_side_encryption_configuration.value, "rule", {}))) == 0 ? [] : [lookup(server_side_encryption_configuration.value, "rule", {})]
+
+        content {
+
+          dynamic "apply_server_side_encryption_by_default" {
+            for_each = length(keys(lookup(rule.value, "apply_server_side_encryption_by_default", {}))) == 0 ? [] : [
+            lookup(rule.value, "apply_server_side_encryption_by_default", {})]
+
+            content {
+              sse_algorithm     = apply_server_side_encryption_by_default.value.sse_algorithm
+              kms_master_key_id = lookup(apply_server_side_encryption_by_default.value, "kms_master_key_id", null)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  # Max 1 block - object_lock_configuration
+  dynamic "object_lock_configuration" {
+    for_each = length(keys(var.object_lock_configuration)) == 0 ? [] : [var.object_lock_configuration]
+
+    content {
+      object_lock_enabled = object_lock_configuration.value.object_lock_enabled
+
+      dynamic "rule" {
+        for_each = length(keys(lookup(object_lock_configuration.value, "rule", {}))) == 0 ? [] : [lookup(object_lock_configuration.value, "rule", {})]
+
+        content {
+          default_retention {
+            mode  = lookup(lookup(rule.value, "default_retention", {}), "mode")
+            days  = lookup(lookup(rule.value, "default_retention", {}), "days", null)
+            years = lookup(lookup(rule.value, "default_retention", {}), "years", null)
+          }
+        }
+      }
+    }
+  }
+
 }
 
-variable "environment" {
-  type        = string
-  default     = ""
-  description = "Environment, e.g. 'prod', 'staging', 'dev', 'pre-prod', 'UAT'"
+resource "aws_s3_bucket_policy" "this" {
+  count = var.create_bucket && (var.attach_elb_log_delivery_policy || var.attach_policy) ? 1 : 0
+
+  bucket = aws_s3_bucket.this[0].id
+  policy = var.attach_elb_log_delivery_policy ? data.aws_iam_policy_document.elb_log_delivery[0].json : var.policy
 }
 
-variable "stage" {
-  type        = string
-  default     = ""
-  description = "Stage, e.g. 'prod', 'staging', 'dev', OR 'source', 'build', 'test', 'deploy', 'release'"
+# AWS Load Balancer access log delivery policy
+data "aws_elb_service_account" "this" {
+  count = var.create_bucket && var.attach_elb_log_delivery_policy ? 1 : 0
 }
 
-variable "name" {
-  type        = string
-  default     = ""
-  description = "Solution name, e.g. 'app' or 'jenkins'"
+data "aws_iam_policy_document" "elb_log_delivery" {
+  count = var.create_bucket && var.attach_elb_log_delivery_policy ? 1 : 0
+
+  statement {
+    sid = ""
+
+    principals {
+      type        = "AWS"
+      identifiers = data.aws_elb_service_account.this.*.arn
+    }
+
+    effect = "Allow"
+
+    actions = [
+      "s3:PutObject",
+    ]
+
+    resources = [
+      "${aws_s3_bucket.this[0].arn}/*",
+    ]
+  }
 }
 
-variable "enabled" {
-  type        = bool
-  default     = true
-  description = "Set to false to prevent the module from creating any resources"
-}
+resource "aws_s3_bucket_public_access_block" "this" {
+  count = var.create_bucket && var.attach_public_policy ? 1 : 0
 
-variable "delimiter" {
-  type        = string
-  default     = "-"
-  description = "Delimiter to be used between `namespace`, `environment`, `stage`, `name` and `attributes`"
-}
+  # Chain resources (s3_bucket -> s3_bucket_policy -> s3_bucket_public_access_block)
+  # to prevent "A conflicting conditional operation is currently in progress against this resource."
+  bucket = (var.attach_elb_log_delivery_policy || var.attach_policy) ? aws_s3_bucket_policy.this[0].id : aws_s3_bucket.this[0].id
 
-variable "attributes" {
-  type        = list(string)
-  default     = []
-  description = "Additional attributes (e.g. `1`)"
-}
-
-variable "tags" {
-  type        = map(string)
-  default     = {}
-  description = "Additional tags (e.g. `map('BusinessUnit','XYZ')`"
-}
-
-variable "acl" {
-  type        = string
-  default     = "private"
-  description = "The [canned ACL](https://docs.aws.amazon.com/AmazonS3/latest/dev/acl-overview.html#canned-acl) to apply. We recommend `private` to avoid exposing sensitive information. Conflicts with `grants`."
-}
-
-variable "grants" {
-  type = list(object({
-    id          = string
-    type        = string
-    permissions = list(string)
-    uri         = string
-  }))
-  default = null
-
-  description = "A list of ACL policy grants. Conflicts with `acl`. Set `acl` to `null` to use this."
-}
-
-variable "policy" {
-  type        = string
-  default     = ""
-  description = "A valid bucket policy JSON document. Note that if the policy document is not specific enough (but still valid), Terraform may view the policy as constantly changing in a terraform plan. In this case, please make sure you use the verbose/specific version of the policy"
-}
-
-variable "region" {
-  type        = string
-  default     = ""
-  description = "If specified, the AWS region this bucket should reside in. Otherwise, the region used by the callee"
-}
-
-variable "force_destroy" {
-  type        = bool
-  default     = false
-  description = "A boolean string that indicates all objects should be deleted from the bucket so that the bucket can be destroyed without error. These objects are not recoverable"
-}
-
-variable "versioning_enabled" {
-  type        = bool
-  default     = false
-  description = "A state of versioning. Versioning is a means of keeping multiple variants of an object in the same bucket"
-}
-
-variable "sse_algorithm" {
-  type        = string
-  default     = "AES256"
-  description = "The server-side encryption algorithm to use. Valid values are `AES256` and `aws:kms`"
-}
-
-variable "kms_master_key_arn" {
-  type        = string
-  default     = ""
-  description = "The AWS KMS master key ARN used for the `SSE-KMS` encryption. This can only be used when you set the value of `sse_algorithm` as `aws:kms`. The default aws/s3 AWS KMS master key is used if this element is absent while the `sse_algorithm` is `aws:kms`"
-}
-
-variable "user_enabled" {
-  type        = bool
-  default     = false
-  description = "Set to `true` to create an IAM user with permission to access the bucket"
-}
-
-variable "allowed_bucket_actions" {
-  type        = list(string)
-  default     = ["s3:PutObject", "s3:PutObjectAcl", "s3:GetObject", "s3:DeleteObject", "s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetBucketLocation", "s3:AbortMultipartUpload"]
-  description = "List of actions the user is permitted to perform on the S3 bucket"
-}
-
-variable "allow_encrypted_uploads_only" {
-  type        = bool
-  default     = false
-  description = "Set to `true` to prevent uploads of unencrypted objects to S3 bucket"
-}
-
-variable "lifecycle_rule_enabled" {
-  type        = bool
-  default     = false
-  description = "Enable or disable lifecycle rule"
-}
-
-variable "prefix" {
-  type        = string
-  default     = ""
-  description = "Prefix identifying one or more objects to which the rule applies"
-}
-
-variable "noncurrent_version_transition_days" {
-  type        = number
-  default     = 30
-  description = "Number of days to persist in the standard storage tier before moving to the glacier tier infrequent access tier"
-}
-
-variable "noncurrent_version_expiration_days" {
-  type        = number
-  default     = 90
-  description = "Specifies when noncurrent object versions expire"
-}
-
-variable "cors_rule_inputs" {
-  type = list(object({
-    allowed_headers = list(string)
-    allowed_methods = list(string)
-    allowed_origins = list(string)
-    expose_headers  = list(string)
-    max_age_seconds = number
-  }))
-  default = null
-
-  description = "Specifies the allowed headers, methods, origins and exposed headers when using CORS on this bucket"
-}
-
-variable "standard_transition_days" {
-  type        = number
-  default     = 30
-  description = "Number of days to persist in the standard storage tier before moving to the infrequent access tier"
-}
-
-variable "glacier_transition_days" {
-  type        = number
-  default     = 60
-  description = "Number of days after which to move the data to the glacier storage tier"
-}
-
-variable "enable_glacier_transition" {
-  type        = bool
-  default     = true
-  description = "Enables the transition to AWS Glacier which can cause unnecessary costs for huge amount of small files"
-}
-
-variable "enable_standard_ia_transition" {
-  type        = bool
-  default     = false
-  description = "Enables the transition to STANDARD_IA"
-}
-
-variable "expiration_days" {
-  type        = number
-  default     = 90
-  description = "Number of days after which to expunge the objects"
-}
-
-variable "abort_incomplete_multipart_upload_days" {
-  type        = number
-  default     = 5
-  description = "Maximum time (in days) that you want to allow multipart uploads to remain in progress"
-}
-
-variable "lifecycle_tags" {
-  type        = map(string)
-  description = "Tags filter. Used to manage object lifecycle events"
-  default     = {}
-}
-
-variable "block_public_acls" {
-  type        = bool
-  default     = true
-  description = "Set to `false` to disable the blocking of new public access lists on the bucket"
-}
-
-variable "block_public_policy" {
-  type        = bool
-  default     = true
-  description = "Set to `false` to disable the blocking of new public policies on the bucket"
-}
-
-variable "ignore_public_acls" {
-  type        = bool
-  default     = true
-  description = "Set to `false` to disable the ignoring of public access lists on the bucket"
-}
-
-variable "restrict_public_buckets" {
-  type        = bool
-  default     = true
-  description = "Set to `false` to disable the restricting of making the bucket public"
+  block_public_acls       = var.block_public_acls
+  block_public_policy     = var.block_public_policy
+  ignore_public_acls      = var.ignore_public_acls
+  restrict_public_buckets = var.restrict_public_buckets
 }
