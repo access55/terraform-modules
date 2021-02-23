@@ -2,11 +2,14 @@
 # VARIÁVEIS OBRIGATÓRIAS
 # ----------------------------------------------------------------------------------------------------------------------
 
-variable "port" {
+variable "from_port" {
   type        = number
   description = "Porta do rule"
 }
-
+variable "to_port" {
+  type        = number
+  description = "Porta do rule"
+}
 variable "ips_sg_list" {
   type = list(string)
 }
