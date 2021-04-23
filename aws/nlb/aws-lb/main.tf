@@ -1,5 +1,6 @@
 resource "aws_lb" "nlb_internal" {
   count                      = var.internal ? 1 : 0
+  enable_cross_zone_load_balancing = "true"
   name                       = var.name
   internal                   = var.internal
   load_balancer_type         = "network"
@@ -14,6 +15,7 @@ resource "aws_lb" "nlb_internal" {
 
 resource "aws_lb" "nlb_external" {
   count                      = var.internal == false ? 1 : 0
+  enable_cross_zone_load_balancing = "true"
   name                       = var.name
   internal                   = var.internal
   load_balancer_type         = "network"
