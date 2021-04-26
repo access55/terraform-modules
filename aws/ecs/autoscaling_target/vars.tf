@@ -18,3 +18,6 @@ variable "resource_id" {
 variable "scalable_dimension" {
   description = "AutoScaling Dimession"
 }
+variable "service_namespace" {
+  description = "namespace serviço"
+}
