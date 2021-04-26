@@ -15,3 +15,6 @@ variable "ecs_autoscale_min_instances" {
 variable "resource_id" {
   description = "Cluster Resource"
 }
+variable "scalable_dimension" {
+  description = "AutoScaling Dimession"
+}
