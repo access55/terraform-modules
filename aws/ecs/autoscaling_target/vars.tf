@@ -12,3 +12,6 @@ variable "ecs_autoscale_max_instances" {
 variable "ecs_autoscale_min_instances" {
   description = "Min Containers Runners Autoscaling (up to 255 letters, numbers, hyphens, and underscores)"
 }
+variable "resource_id" {
+  description = "Cluster Resource"
+}
